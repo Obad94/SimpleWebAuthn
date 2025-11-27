@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(deno --version:*)",
+      "Bash(node --version:*)",
+      "Bash(where:*)",
+      "Bash(openssl x509:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

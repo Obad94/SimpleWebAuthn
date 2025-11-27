@@ -1,4 +1,12 @@
-import type { WebAuthnCredential } from '@simplewebauthn/server';
+import type { WebAuthnCredential as BaseWebAuthnCredential } from '@simplewebauthn/server';
+
+// Extend WebAuthnCredential to include device metadata
+export interface WebAuthnCredential extends BaseWebAuthnCredential {
+  deviceType?: string;
+  backedUp?: boolean;
+  userAgent?: string;
+  registeredAt?: string;
+}
 
 /**
  * You'll need a database to store a few things:

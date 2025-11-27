@@ -30,10 +30,9 @@ import {
   VerifyAuthenticationResponseOpts,
   verifyRegistrationResponse,
   VerifyRegistrationResponseOpts,
-  WebAuthnCredential,
 } from '@simplewebauthn/server';
 
-import { LoggedInUser } from './example-server';
+import { LoggedInUser, WebAuthnCredential } from './example-server';
 
 const app = express();
 const MemoryStore = memoryStore(session);
@@ -42,6 +41,7 @@ const {
   ENABLE_CONFORMANCE,
   ENABLE_HTTPS,
   RP_ID = 'localhost',
+  VERCEL,
 } = process.env;
 
 app.use(express.static('./public/'));
@@ -186,7 +186,7 @@ app.post('/verify-registration', async (req, res) => {
   const { verified, registrationInfo } = verification;
 
   if (verified && registrationInfo) {
-    const { credential } = registrationInfo;
+    const { credential, credentialDeviceType, credentialBackedUp } = registrationInfo;
 
     const existingCredential = user.credentials.find((cred) => cred.id === credential.id);
 
@@ -199,8 +199,21 @@ app.post('/verify-registration', async (req, res) => {
         publicKey: credential.publicKey,
         counter: credential.counter,
         transports: body.response.transports,
+        // Store device-identifying information
+        deviceType: credentialDeviceType,
+        backedUp: credentialBackedUp,
+        // You can also store custom metadata from the request
+        userAgent: req.headers['user-agent'],
+        registeredAt: new Date().toISOString(),
       };
       user.credentials.push(newCredential);
+
+      console.log('🔐 New credential registered:', {
+        id: credential.id,
+        deviceType: credentialDeviceType,
+        backedUp: credentialBackedUp,
+        userAgent: req.headers['user-agent'],
+      });
     }
   }
 
@@ -294,7 +307,11 @@ app.post('/verify-authentication', async (req, res) => {
   res.send({ verified });
 });
 
-if (ENABLE_HTTPS) {
+// Detect Vercel environment
+if (VERCEL) {
+  expectedOrigin = `https://${rpID}`;
+  console.log(`🚀 Running on Vercel at ${expectedOrigin}`);
+} else if (ENABLE_HTTPS) {
   const host = '0.0.0.0';
   const port = 443;
   expectedOrigin = `https://${rpID}`;
@@ -314,11 +331,14 @@ if (ENABLE_HTTPS) {
       console.log(`🚀 Server ready at ${expectedOrigin} (${host}:${port})`);
     });
 } else {
-  const host = '127.0.0.1';
+  const host = '0.0.0.0';
   const port = 8000;
-  expectedOrigin = `http://localhost:${port}`;
+  expectedOrigin = `http://${rpID}:${port}`;
 
   http.createServer(app).listen(port, host, () => {
     console.log(`🚀 Server ready at ${expectedOrigin} (${host}:${port})`);
   });
 }
+
+// Export for Vercel serverless
+export default app;
