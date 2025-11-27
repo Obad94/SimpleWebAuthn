@@ -293,7 +293,25 @@ app.post('/verify-registration', async (req, res) => {
         deviceType: credentialDeviceType,
         backedUp: credentialBackedUp,
         userAgent: req.headers['user-agent'],
-        registeredAt: new Date().toISOString(),
+        registeredAt: newCredential.registeredAt,
+      });
+
+      req.session.currentChallenge = undefined;
+
+      // Return full credential info to the client
+      return res.send({
+        verified,
+        credential: {
+          id: credential.id,
+          deviceType: credentialDeviceType,
+          backedUp: credentialBackedUp,
+          registeredAt: newCredential.registeredAt,
+        },
+        user: {
+          id: user.id,
+          username: user.username,
+          totalCredentials: user.credentials.length,
+        },
       });
     }
   }
@@ -409,6 +427,24 @@ app.post('/verify-authentication', async (req, res) => {
       credentialUserAgent: dbCredential.userAgent,
       currentUserAgent: req.headers['user-agent'],
       counterUpdated: `${authenticationInfo.newCounter}`,
+    });
+
+    req.session.currentChallenge = undefined;
+
+    // Return full details to the client
+    return res.send({
+      verified,
+      credential: {
+        id: dbCredential.id,
+        deviceType: dbCredential.deviceType,
+        backedUp: dbCredential.backedUp,
+        registeredAt: dbCredential.registeredAt,
+      },
+      user: {
+        id: user.id,
+        username: user.username,
+        totalCredentials: user.credentials.length,
+      },
     });
   } else {
     console.log('❌ Authentication failed:', {
