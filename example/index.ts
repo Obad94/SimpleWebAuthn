@@ -205,10 +205,12 @@ app.get('/generate-registration-options', async (req, res) => {
     excludeCredentials: credentials.map((cred) => ({
       id: cred.id,
       type: 'public-key',
-      transports: cred.transports,
+      // Don't restrict transports for excludeCredentials
     })),
     authenticatorSelection: {
-      residentKey: 'discouraged',
+      // 'preferred' creates discoverable credentials (passkeys) when possible
+      // This allows authenticators like Bitwarden, Google Password Manager to store and find them
+      residentKey: 'preferred',
       /**
        * Wondering why user verification isn't required? See here:
        *
@@ -340,14 +342,16 @@ app.get('/generate-authentication-options', async (req, res) => {
     userAgent: req.headers['user-agent'],
   });
 
+  // For discoverable credentials, we can use empty allowCredentials
+  // This lets the authenticator find all passkeys for this RP
   const opts: GenerateAuthenticationOptionsOpts = {
     timeout: 60000,
+    // List user's credentials but without transport hints
+    // This allows any authenticator (Windows Hello, Bitwarden, Google PM) to respond
     allowCredentials: user.credentials.map((cred) => ({
       id: cred.id,
       type: 'public-key',
-      // Don't restrict transports - let browser choose the best option
-      // This allows Windows Hello, Bitwarden, or any available authenticator
-      // transports: cred.transports,
+      // Omitting transports lets the browser try ALL authenticators
     })),
     /**
      * Wondering why user verification isn't required? See here:
