@@ -6,6 +6,14 @@ export interface WebAuthnCredential extends BaseWebAuthnCredential {
   backedUp?: boolean;
   userAgent?: string;
   registeredAt?: string;
+  // Enhanced device info
+  browser?: string;
+  browserVersion?: string;
+  os?: string;
+  osVersion?: string;
+  device?: string;
+  authenticatorType?: string;  // 'platform' or 'cross-platform'
+  credentialSource?: string;   // Inferred source: 'Windows Hello', 'iCloud Keychain', 'Google Password Manager', etc.
 }
 
 /**

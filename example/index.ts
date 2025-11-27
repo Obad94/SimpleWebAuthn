@@ -95,6 +95,122 @@ export let expectedOrigin = '';
  */
 const loggedInUserId = 'internalUserId';
 
+/**
+ * Parse User-Agent to extract browser, OS, and device info
+ */
+function parseUserAgent(userAgent: string | undefined): {
+  browser: string;
+  browserVersion: string;
+  os: string;
+  osVersion: string;
+  device: string;
+} {
+  if (!userAgent) {
+    return { browser: 'Unknown', browserVersion: '', os: 'Unknown', osVersion: '', device: 'Unknown' };
+  }
+
+  let browser = 'Unknown';
+  let browserVersion = '';
+  let os = 'Unknown';
+  let osVersion = '';
+  let device = 'Desktop';
+
+  // Detect OS
+  if (userAgent.includes('Windows NT 10')) {
+    os = 'Windows';
+    osVersion = '10/11';
+  } else if (userAgent.includes('Windows')) {
+    os = 'Windows';
+    const match = userAgent.match(/Windows NT (\d+\.\d+)/);
+    osVersion = match ? match[1] : '';
+  } else if (userAgent.includes('Mac OS X')) {
+    os = 'macOS';
+    const match = userAgent.match(/Mac OS X (\d+[._]\d+)/);
+    osVersion = match ? match[1].replace('_', '.') : '';
+  } else if (userAgent.includes('iPhone')) {
+    os = 'iOS';
+    device = 'iPhone';
+    const match = userAgent.match(/iPhone OS (\d+_\d+)/);
+    osVersion = match ? match[1].replace('_', '.') : '';
+  } else if (userAgent.includes('iPad')) {
+    os = 'iPadOS';
+    device = 'iPad';
+  } else if (userAgent.includes('Android')) {
+    os = 'Android';
+    device = 'Android Phone';
+    const match = userAgent.match(/Android (\d+(\.\d+)?)/);
+    osVersion = match ? match[1] : '';
+  } else if (userAgent.includes('Linux')) {
+    os = 'Linux';
+  }
+
+  // Detect Browser
+  if (userAgent.includes('Edg/')) {
+    browser = 'Edge';
+    const match = userAgent.match(/Edg\/(\d+)/);
+    browserVersion = match ? match[1] : '';
+  } else if (userAgent.includes('Chrome/')) {
+    browser = 'Chrome';
+    const match = userAgent.match(/Chrome\/(\d+)/);
+    browserVersion = match ? match[1] : '';
+  } else if (userAgent.includes('Safari/') && !userAgent.includes('Chrome')) {
+    browser = 'Safari';
+    const match = userAgent.match(/Version\/(\d+)/);
+    browserVersion = match ? match[1] : '';
+  } else if (userAgent.includes('Firefox/')) {
+    browser = 'Firefox';
+    const match = userAgent.match(/Firefox\/(\d+)/);
+    browserVersion = match ? match[1] : '';
+  }
+
+  return { browser, browserVersion, os, osVersion, device };
+}
+
+/**
+ * Infer credential source based on device type, backup status, OS, and authenticator attachment
+ */
+function inferCredentialSource(
+  deviceType: string,
+  backedUp: boolean,
+  os: string,
+  authenticatorAttachment?: string,
+  transports?: string[]
+): string {
+  // Check transports for hints
+  const hasHybrid = transports?.includes('hybrid');
+  const hasInternal = transports?.includes('internal');
+  
+  if (deviceType === 'multiDevice' && backedUp) {
+    // Synced passkey
+    if (os === 'iOS' || os === 'iPadOS' || os === 'macOS') {
+      return 'iCloud Keychain';
+    } else if (os === 'Android') {
+      return 'Google Password Manager';
+    } else if (os === 'Windows') {
+      // Could be Google PM, Bitwarden, 1Password, etc.
+      if (hasHybrid) {
+        return 'Synced Passkey (Phone/Cloud)';
+      }
+      return 'Cloud Passkey Manager (Chrome/Bitwarden/1Password)';
+    }
+    return 'Cloud Passkey Manager';
+  } else if (deviceType === 'singleDevice') {
+    // Device-bound passkey
+    if (os === 'Windows') {
+      return 'Windows Hello';
+    } else if (os === 'macOS') {
+      return 'Touch ID (Mac)';
+    } else if (os === 'iOS' || os === 'iPadOS') {
+      return 'Face ID / Touch ID';
+    } else if (os === 'Android') {
+      return 'Android Biometric';
+    }
+    return 'Platform Authenticator';
+  }
+  
+  return 'Unknown Authenticator';
+}
+
 const inMemoryUserDB: { [loggedInUserId: string]: LoggedInUser } = {
   [loggedInUserId]: {
     id: loggedInUserId,
@@ -274,6 +390,16 @@ app.post('/verify-registration', async (req, res) => {
       /**
        * Add the returned credential to the user's list of credentials
        */
+      const userAgentStr = req.headers['user-agent'] as string;
+      const parsedUA = parseUserAgent(userAgentStr);
+      const credentialSource = inferCredentialSource(
+        credentialDeviceType,
+        credentialBackedUp,
+        parsedUA.os,
+        body.authenticatorAttachment,
+        body.response.transports
+      );
+
       const newCredential: WebAuthnCredential = {
         id: credential.id,
         publicKey: credential.publicKey,
@@ -282,9 +408,16 @@ app.post('/verify-registration', async (req, res) => {
         // Store device-identifying information
         deviceType: credentialDeviceType,
         backedUp: credentialBackedUp,
-        // You can also store custom metadata from the request
-        userAgent: req.headers['user-agent'],
+        // Enhanced device info
+        userAgent: userAgentStr,
         registeredAt: new Date().toISOString(),
+        browser: parsedUA.browser,
+        browserVersion: parsedUA.browserVersion,
+        os: parsedUA.os,
+        osVersion: parsedUA.osVersion,
+        device: parsedUA.device,
+        authenticatorType: body.authenticatorAttachment || 'unknown',
+        credentialSource,
       };
       user.credentials.push(newCredential);
 
@@ -292,9 +425,14 @@ app.post('/verify-registration', async (req, res) => {
         userId: user.id,
         username: user.username,
         credentialId: credential.id,
+        credentialSource,
         deviceType: credentialDeviceType,
         backedUp: credentialBackedUp,
-        userAgent: req.headers['user-agent'],
+        browser: `${parsedUA.browser} ${parsedUA.browserVersion}`,
+        os: `${parsedUA.os} ${parsedUA.osVersion}`,
+        device: parsedUA.device,
+        authenticatorType: body.authenticatorAttachment,
+        transports: body.response.transports,
         registeredAt: newCredential.registeredAt,
       });
 
@@ -305,8 +443,14 @@ app.post('/verify-registration', async (req, res) => {
         verified,
         credential: {
           id: credential.id,
+          credentialSource,
           deviceType: credentialDeviceType,
           backedUp: credentialBackedUp,
+          browser: `${parsedUA.browser} ${parsedUA.browserVersion}`,
+          os: `${parsedUA.os} ${parsedUA.osVersion}`,
+          device: parsedUA.device,
+          authenticatorType: body.authenticatorAttachment,
+          transports: body.response.transports,
           registeredAt: newCredential.registeredAt,
         },
         user: {
@@ -335,11 +479,23 @@ app.get('/generate-authentication-options', async (req, res) => {
     return res.status(401).send({ error: 'User not logged in' });
   }
 
+  // Log detailed credential info
+  const credentialsSummary = user.credentials.map((cred) => ({
+    id: cred.id,
+    source: cred.credentialSource || 'Unknown',
+    deviceType: cred.deviceType,
+    backedUp: cred.backedUp,
+    browser: cred.browser,
+    os: cred.os,
+    registeredAt: cred.registeredAt,
+  }));
+
   console.log('🔑 Authentication requested:', {
     userId: user.id,
     username: user.username,
     registeredCredentials: user.credentials.length,
-    userAgent: req.headers['user-agent'],
+    credentials: credentialsSummary,
+    currentUserAgent: req.headers['user-agent'],
   });
 
   // For discoverable credentials, we can use empty allowCredentials
@@ -423,33 +579,61 @@ app.post('/verify-authentication', async (req, res) => {
     // Update the credential's counter in the DB to the newest count in the authentication
     dbCredential.counter = authenticationInfo.newCounter;
 
+    // Parse current user agent for comparison
+    const currentUA = parseUserAgent(req.headers['user-agent'] as string);
+
     console.log('✅ Authentication successful:', {
       userId: user.id,
       username: user.username,
       credentialId: dbCredential.id,
+      credentialSource: dbCredential.credentialSource,
       credentialDeviceType: dbCredential.deviceType,
       credentialBackedUp: dbCredential.backedUp,
+      credentialBrowser: `${dbCredential.browser} ${dbCredential.browserVersion}`,
+      credentialOS: `${dbCredential.os} ${dbCredential.osVersion}`,
       credentialRegisteredAt: dbCredential.registeredAt,
-      credentialUserAgent: dbCredential.userAgent,
-      currentUserAgent: req.headers['user-agent'],
+      currentBrowser: `${currentUA.browser} ${currentUA.browserVersion}`,
+      currentOS: `${currentUA.os} ${currentUA.osVersion}`,
       counterUpdated: `${authenticationInfo.newCounter}`,
     });
 
     req.session.currentChallenge = undefined;
 
-    // Return full details to the client
+    // Return full details to the client including all credentials summary
+    const allCredentials = user.credentials.map((cred) => ({
+      id: cred.id,
+      credentialSource: cred.credentialSource || 'Unknown',
+      deviceType: cred.deviceType,
+      backedUp: cred.backedUp,
+      browser: `${cred.browser || 'Unknown'} ${cred.browserVersion || ''}`.trim(),
+      os: `${cred.os || 'Unknown'} ${cred.osVersion || ''}`.trim(),
+      device: cred.device,
+      registeredAt: cred.registeredAt,
+      isCurrentCredential: cred.id === dbCredential.id,
+    }));
+
     return res.send({
       verified,
-      credential: {
+      authenticatedWith: {
         id: dbCredential.id,
+        credentialSource: dbCredential.credentialSource,
         deviceType: dbCredential.deviceType,
         backedUp: dbCredential.backedUp,
+        browser: `${dbCredential.browser || 'Unknown'} ${dbCredential.browserVersion || ''}`.trim(),
+        os: `${dbCredential.os || 'Unknown'} ${dbCredential.osVersion || ''}`.trim(),
+        device: dbCredential.device,
         registeredAt: dbCredential.registeredAt,
+      },
+      currentSession: {
+        browser: `${currentUA.browser} ${currentUA.browserVersion}`,
+        os: `${currentUA.os} ${currentUA.osVersion}`,
+        device: currentUA.device,
       },
       user: {
         id: user.id,
         username: user.username,
         totalCredentials: user.credentials.length,
+        allCredentials,
       },
     });
   } else {
@@ -464,6 +648,41 @@ app.post('/verify-authentication', async (req, res) => {
   req.session.currentChallenge = undefined;
 
   res.send({ verified });
+});
+
+/**
+ * List all credentials for the logged-in user
+ */
+app.get('/list-credentials', (req, res) => {
+  const userId = req.session.userId || loggedInUserId;
+  const user = inMemoryUserDB[userId];
+
+  if (!user) {
+    return res.status(401).send({ error: 'User not logged in' });
+  }
+
+  const credentials = user.credentials.map((cred, index) => ({
+    index: index + 1,
+    id: cred.id,
+    credentialSource: cred.credentialSource || 'Unknown',
+    deviceType: cred.deviceType,
+    backedUp: cred.backedUp,
+    browser: `${cred.browser || 'Unknown'} ${cred.browserVersion || ''}`.trim(),
+    os: `${cred.os || 'Unknown'} ${cred.osVersion || ''}`.trim(),
+    device: cred.device || 'Unknown',
+    authenticatorType: cred.authenticatorType,
+    transports: cred.transports,
+    registeredAt: cred.registeredAt,
+  }));
+
+  res.send({
+    user: {
+      id: user.id,
+      username: user.username,
+    },
+    totalCredentials: credentials.length,
+    credentials,
+  });
 });
 
 // Detect Vercel environment
