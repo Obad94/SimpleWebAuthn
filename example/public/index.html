@@ -122,11 +122,6 @@
             <strong>🔑&nbsp;Sign In with Passkey</strong>
           </button>
           <p class="hint">No password needed - just use your passkey!</p>
-          <br />
-          <button id="btnAuthBegin" class="secondary">
-            <strong>🔐&nbsp;Password + Passkey</strong>
-          </button>
-          <p class="hint">Traditional login then verify with passkey</p>
         </section>
 
         <section id="results">
@@ -346,78 +341,6 @@
 
           if (verificationJSON && verificationJSON.verified) {
             elemSuccess.innerHTML = `✅ Welcome back, ${verificationJSON.user?.username || 'User'}!`;
-          } else {
-            elemError.innerHTML = `Oh no, something went wrong! Response: <pre>${JSON.stringify(
-              verificationJSON,
-            )}</pre>`;
-          }
-        });
-
-        /**
-         * 4. AUTHENTICATE - Login + verify with existing passkey
-         */
-        document.querySelector('#btnAuthBegin').addEventListener('click', async () => {
-          const elemSuccess = document.querySelector('#authSuccess');
-          const elemError = document.querySelector('#authError');
-          const elemDebug = document.querySelector('#regDebug'); // Using same debug area
-
-          clearMessages();
-          elemDebug.innerHTML = '';
-
-          const { username, password } = getFormValues();
-
-          if (!username || !password) {
-            elemError.innerText = 'Please enter username and password';
-            return;
-          }
-
-          // Step 1: Login
-          try {
-            const loginResp = await fetch('/login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ username, password }),
-            });
-
-            const loginJSON = await loginResp.json();
-
-            if (!loginResp.ok) {
-              elemError.innerText = loginJSON.error || 'Failed to login';
-              return;
-            }
-
-            printDebug(elemDebug, '✅ User Login', JSON.stringify(loginJSON, null, 2));
-          } catch (error) {
-            elemError.innerText = error;
-            return;
-          }
-
-          // Step 2: Authenticate with passkey
-          const resp = await fetch('/generate-authentication-options');
-
-          let asseResp;
-          try {
-            const opts = await resp.json();
-            printDebug(elemDebug, 'Authentication Options', JSON.stringify(opts, null, 2));
-
-            asseResp = await startAuthentication({ optionsJSON: opts });
-            printDebug(elemDebug, 'Authentication Response', JSON.stringify(asseResp, null, 2));
-          } catch (error) {
-            elemError.innerText = error;
-            throw new Error(error);
-          }
-
-          const verificationResp = await fetch('/verify-authentication', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(asseResp),
-          });
-
-          const verificationJSON = await verificationResp.json();
-          printDebug(elemDebug, 'Server Response', JSON.stringify(verificationJSON, null, 2));
-
-          if (verificationJSON && verificationJSON.verified) {
-            elemSuccess.innerHTML = `✅ Authenticated successfully!`;
           } else {
             elemError.innerHTML = `Oh no, something went wrong! Response: <pre>${JSON.stringify(
               verificationJSON,
