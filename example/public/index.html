@@ -90,37 +90,48 @@
       <h1>SimpleWebAuthn Example Site</h1>
 
       <div class="controls">
+        <section id="inputSection">
+          <form onsubmit="stopSubmit(event)">
+            <label for="username">Username (Email)</label>
+            <input type="text" name="username" autocomplete="username webauthn" autofocus />
+            <br />
+            <label for="password">Password</label>
+            <input type="password" name="password" autocomplete="current-password webauthn" />
+          </form>
+        </section>
+
         <section id="registration">
+          <h3>New User?</h3>
           <button id="btnRegBegin">
-            <strong>🚪&nbsp;Register</strong>
+            <strong>🚪&nbsp;Register New Account</strong>
           </button>
-          <p id="regSuccess" class="success"></p>
-          <p id="regError" class="error"></p>
-          <details open>
-            <summary>Console</summary>
-            <textarea id="regDebug" spellcheck="false"></textarea>
-          </details>
+          <p class="hint">Creates account + first passkey</p>
+        </section>
+
+        <section id="addPasskey">
+          <h3>Add Another Passkey?</h3>
+          <button id="btnAddPasskey">
+            <strong>➕&nbsp;Add Passkey to Account</strong>
+          </button>
+          <p class="hint">Login first, then add new device/passkey</p>
         </section>
 
         <section id="authentication">
-          <form onsubmit="stopSubmit(event)">
-            <section id="inputUsername">
-              <label for="username">Username</label>
-              <input type="text" name="username" autocomplete="username webauthn" autofocus />
-              <br />
-              <label for="password">Password</label>
-              <input type="password" name="password" autocomplete="current-password webauthn" />
-              <br />
-            </section>
-            <button id="btnAuthBegin">
-              <strong>🔐&nbsp;Authenticate</strong>
-            </button>
-          </form>
+          <h3>Existing User?</h3>
+          <button id="btnAuthBegin">
+            <strong>🔐&nbsp;Authenticate with Passkey</strong>
+          </button>
+          <p class="hint">Login + verify with existing passkey</p>
+        </section>
+
+        <section id="results">
+          <p id="regSuccess" class="success"></p>
+          <p id="regError" class="error"></p>
           <p id="authSuccess" class="success"></p>
           <p id="authError" class="error"></p>
           <details open>
             <summary>Console</summary>
-            <textarea id="authDebug" spellcheck="false"></textarea>
+            <textarea id="regDebug" spellcheck="false"></textarea>
           </details>
         </section>
       </div>
@@ -151,79 +162,133 @@
         document.querySelector('.systemError').innerText =
           "It seems this browser doesn't support WebAuthn...";
       } else {
-        function hideAuthForm() {
-          document.getElementById('inputUsername').style.display = 'none';
+        // Helper to clear messages
+        function clearMessages() {
+          document.querySelector('#regSuccess').innerHTML = '';
+          document.querySelector('#regError').innerHTML = '';
+          document.querySelector('#authSuccess').innerHTML = '';
+          document.querySelector('#authError').innerHTML = '';
+        }
+
+        // Helper to get form values
+        function getFormValues() {
+          return {
+            username: document.querySelector('input[name="username"]').value,
+            password: document.querySelector('input[name="password"]').value,
+          };
         }
 
         /**
-         * Registration
+         * 1. REGISTER NEW ACCOUNT - Creates user + first passkey
          */
         document.querySelector('#btnRegBegin').addEventListener('click', async () => {
           const elemSuccess = document.querySelector('#regSuccess');
           const elemError = document.querySelector('#regError');
           const elemDebug = document.querySelector('#regDebug');
 
-          // Reset success/error messages
-          elemSuccess.innerHTML = '';
-          elemError.innerHTML = '';
+          clearMessages();
           elemDebug.innerHTML = '';
 
-          // Get username and password from form
-          const username = document.querySelector('input[name="username"]').value;
-          const password = document.querySelector('input[name="password"]').value;
+          const { username, password } = getFormValues();
 
-          // If username/password provided, register user first
-          if (username && password) {
-            try {
-              const registerResp = await fetch('/register-user', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username, password }),
-              });
-
-              const registerJSON = await registerResp.json();
-
-              if (!registerResp.ok) {
-                elemError.innerText = registerJSON.error || 'Failed to register user';
-                return;
-              }
-
-              printDebug(elemDebug, 'User Registration', JSON.stringify(registerJSON, null, 2));
-            } catch (error) {
-              elemError.innerText = error;
-              return;
-            }
+          if (!username || !password) {
+            elemError.innerText = 'Please enter username and password';
+            return;
           }
 
+          // Step 1: Create new user account
+          try {
+            const registerResp = await fetch('/register-user', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, password }),
+            });
+
+            const registerJSON = await registerResp.json();
+
+            if (!registerResp.ok) {
+              elemError.innerText = registerJSON.error || 'Failed to register user';
+              return;
+            }
+
+            printDebug(elemDebug, '✅ User Account Created', JSON.stringify(registerJSON, null, 2));
+          } catch (error) {
+            elemError.innerText = error;
+            return;
+          }
+
+          // Step 2: Register first passkey
+          await registerPasskey(elemSuccess, elemError, elemDebug);
+        });
+
+        /**
+         * 2. ADD PASSKEY TO EXISTING ACCOUNT - Login first, then add new passkey
+         */
+        document.querySelector('#btnAddPasskey').addEventListener('click', async () => {
+          const elemSuccess = document.querySelector('#regSuccess');
+          const elemError = document.querySelector('#regError');
+          const elemDebug = document.querySelector('#regDebug');
+
+          clearMessages();
+          elemDebug.innerHTML = '';
+
+          const { username, password } = getFormValues();
+
+          if (!username || !password) {
+            elemError.innerText = 'Please enter username and password to login first';
+            return;
+          }
+
+          // Step 1: Login to existing account
+          try {
+            const loginResp = await fetch('/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, password }),
+            });
+
+            const loginJSON = await loginResp.json();
+
+            if (!loginResp.ok) {
+              elemError.innerText = loginJSON.error || 'Failed to login - user may not exist';
+              return;
+            }
+
+            printDebug(elemDebug, '✅ Logged In', JSON.stringify(loginJSON, null, 2));
+          } catch (error) {
+            elemError.innerText = error;
+            return;
+          }
+
+          // Step 2: Add new passkey to this account
+          await registerPasskey(elemSuccess, elemError, elemDebug);
+        });
+
+        /**
+         * Shared function to register a passkey (used by both Register and Add Passkey)
+         */
+        async function registerPasskey(elemSuccess, elemError, elemDebug) {
           const resp = await fetch('/generate-registration-options');
 
           let attResp;
           try {
             const opts = await resp.json();
-
             printDebug(elemDebug, 'Registration Options', JSON.stringify(opts, null, 2));
-
-            hideAuthForm();
 
             attResp = await startRegistration({ optionsJSON: opts });
             printDebug(elemDebug, 'Registration Response', JSON.stringify(attResp, null, 2));
           } catch (error) {
             if (error.name === 'InvalidStateError') {
-              elemError.innerText = 'Error: Authenticator was probably already registered by user';
+              elemError.innerText = 'Error: This authenticator is already registered for this account';
             } else {
               elemError.innerText = error;
             }
-
             throw error;
           }
 
           const verificationResp = await fetch('/verify-registration', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(attResp),
           });
 
@@ -231,64 +296,60 @@
           printDebug(elemDebug, 'Server Response', JSON.stringify(verificationJSON, null, 2));
 
           if (verificationJSON && verificationJSON.verified) {
-            elemSuccess.innerHTML = `Authenticator registered!`;
+            elemSuccess.innerHTML = `✅ Passkey registered successfully!`;
           } else {
             elemError.innerHTML = `Oh no, something went wrong! Response: <pre>${JSON.stringify(
               verificationJSON,
             )}</pre>`;
           }
-        });
+        }
 
         /**
-         * Authentication
+         * 3. AUTHENTICATE - Login + verify with existing passkey
          */
         document.querySelector('#btnAuthBegin').addEventListener('click', async () => {
           const elemSuccess = document.querySelector('#authSuccess');
           const elemError = document.querySelector('#authError');
-          const elemDebug = document.querySelector('#authDebug');
+          const elemDebug = document.querySelector('#regDebug'); // Using same debug area
 
-          // Reset success/error messages
-          elemSuccess.innerHTML = '';
-          elemError.innerHTML = '';
+          clearMessages();
           elemDebug.innerHTML = '';
 
-          // Get username and password from form
-          const username = document.querySelector('input[name="username"]').value;
-          const password = document.querySelector('input[name="password"]').value;
+          const { username, password } = getFormValues();
 
-          // If username/password provided, login first
-          if (username && password) {
-            try {
-              const loginResp = await fetch('/login', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username, password }),
-              });
-
-              const loginJSON = await loginResp.json();
-
-              if (!loginResp.ok) {
-                elemError.innerText = loginJSON.error || 'Failed to login';
-                return;
-              }
-
-              printDebug(elemDebug, 'User Login', JSON.stringify(loginJSON, null, 2));
-            } catch (error) {
-              elemError.innerText = error;
-              return;
-            }
+          if (!username || !password) {
+            elemError.innerText = 'Please enter username and password';
+            return;
           }
 
+          // Step 1: Login
+          try {
+            const loginResp = await fetch('/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, password }),
+            });
+
+            const loginJSON = await loginResp.json();
+
+            if (!loginResp.ok) {
+              elemError.innerText = loginJSON.error || 'Failed to login';
+              return;
+            }
+
+            printDebug(elemDebug, '✅ User Login', JSON.stringify(loginJSON, null, 2));
+          } catch (error) {
+            elemError.innerText = error;
+            return;
+          }
+
+          // Step 2: Authenticate with passkey
           const resp = await fetch('/generate-authentication-options');
 
           let asseResp;
           try {
             const opts = await resp.json();
             printDebug(elemDebug, 'Authentication Options', JSON.stringify(opts, null, 2));
-
-            hideAuthForm();
 
             asseResp = await startAuthentication({ optionsJSON: opts });
             printDebug(elemDebug, 'Authentication Response', JSON.stringify(asseResp, null, 2));
@@ -299,9 +360,7 @@
 
           const verificationResp = await fetch('/verify-authentication', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(asseResp),
           });
 
@@ -309,7 +368,7 @@
           printDebug(elemDebug, 'Server Response', JSON.stringify(verificationJSON, null, 2));
 
           if (verificationJSON && verificationJSON.verified) {
-            elemSuccess.innerHTML = `User authenticated!`;
+            elemSuccess.innerHTML = `✅ Authenticated successfully!`;
           } else {
             elemError.innerHTML = `Oh no, something went wrong! Response: <pre>${JSON.stringify(
               verificationJSON,
