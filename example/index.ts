@@ -287,10 +287,13 @@ app.post('/verify-registration', async (req, res) => {
       user.credentials.push(newCredential);
 
       console.log('🔐 New credential registered:', {
-        id: credential.id,
+        userId: user.id,
+        username: user.username,
+        credentialId: credential.id,
         deviceType: credentialDeviceType,
         backedUp: credentialBackedUp,
         userAgent: req.headers['user-agent'],
+        registeredAt: new Date().toISOString(),
       });
     }
   }
