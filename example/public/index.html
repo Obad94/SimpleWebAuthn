@@ -118,10 +118,15 @@
 
         <section id="authentication">
           <h3>Existing User?</h3>
-          <button id="btnAuthBegin">
-            <strong>🔐&nbsp;Authenticate with Passkey</strong>
+          <button id="btnPasskeyOnly">
+            <strong>🔑&nbsp;Sign In with Passkey</strong>
           </button>
-          <p class="hint">Login + verify with existing passkey</p>
+          <p class="hint">No password needed - just use your passkey!</p>
+          <br />
+          <button id="btnAuthBegin" class="secondary">
+            <strong>🔐&nbsp;Password + Passkey</strong>
+          </button>
+          <p class="hint">Traditional login then verify with passkey</p>
         </section>
 
         <section id="results">
@@ -305,7 +310,51 @@
         }
 
         /**
-         * 3. AUTHENTICATE - Login + verify with existing passkey
+         * 3. PASSWORDLESS SIGN IN - Just use passkey, no username/password needed!
+         */
+        document.querySelector('#btnPasskeyOnly').addEventListener('click', async () => {
+          const elemSuccess = document.querySelector('#authSuccess');
+          const elemError = document.querySelector('#authError');
+          const elemDebug = document.querySelector('#regDebug');
+
+          clearMessages();
+          elemDebug.innerHTML = '';
+
+          // Get passwordless authentication options (no user login required)
+          const resp = await fetch('/generate-passwordless-options');
+
+          let asseResp;
+          try {
+            const opts = await resp.json();
+            printDebug(elemDebug, 'Passwordless Options', JSON.stringify(opts, null, 2));
+
+            asseResp = await startAuthentication({ optionsJSON: opts });
+            printDebug(elemDebug, 'Authentication Response', JSON.stringify(asseResp, null, 2));
+          } catch (error) {
+            elemError.innerText = error;
+            throw new Error(error);
+          }
+
+          const verificationResp = await fetch('/verify-passwordless', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(asseResp),
+          });
+
+          const verificationJSON = await verificationResp.json();
+          printDebug(elemDebug, 'Server Response', JSON.stringify(verificationJSON, null, 2));
+
+          if (verificationJSON && verificationJSON.verified) {
+            elemSuccess.innerHTML = `✅ Welcome back, ${verificationJSON.user?.username || 'User'}!`;
+          } else {
+            elemError.innerHTML = `Oh no, something went wrong! Response: <pre>${JSON.stringify(
+              verificationJSON,
+            )}</pre>`;
+          }
+        });
+
+        /**
+         * 4. AUTHENTICATE - Login + verify with existing passkey
          */
         document.querySelector('#btnAuthBegin').addEventListener('click', async () => {
           const elemSuccess = document.querySelector('#authSuccess');

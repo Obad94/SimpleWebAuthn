@@ -651,6 +651,135 @@ app.post('/verify-authentication', async (req, res) => {
 });
 
 /**
+ * PASSWORDLESS AUTHENTICATION - No username/password required!
+ * Uses discoverable credentials to find the user
+ */
+app.get('/generate-passwordless-options', async (req, res) => {
+  console.log('🔑 Passwordless authentication requested');
+
+  const opts: GenerateAuthenticationOptionsOpts = {
+    timeout: 60000,
+    // Empty allowCredentials = discoverable credentials mode
+    // The authenticator will show ALL passkeys for this site
+    allowCredentials: [],
+    userVerification: 'preferred',
+    rpID,
+  };
+
+  const options = await generateAuthenticationOptions(opts);
+
+  // Store challenge in session
+  req.session.currentChallenge = options.challenge;
+
+  res.send(options);
+});
+
+app.post('/verify-passwordless', async (req, res) => {
+  const body: AuthenticationResponseJSON = req.body;
+  const expectedChallenge = req.session.currentChallenge;
+
+  // With discoverable credentials, we need to find which user owns this credential
+  let dbCredential: WebAuthnCredential | undefined;
+  let user: LoggedInUser | undefined;
+
+  // Search ALL users for this credential
+  for (const [, u] of Object.entries(inMemoryUserDB)) {
+    for (const cred of u.credentials) {
+      if (cred.id === body.id) {
+        dbCredential = cred;
+        user = u;
+        break;
+      }
+    }
+    if (dbCredential) break;
+  }
+
+  if (!dbCredential || !user) {
+    return res.status(400).send({
+      error: 'Passkey not recognized. Please register first.',
+    });
+  }
+
+  let verification: VerifiedAuthenticationResponse;
+  try {
+    const opts: VerifyAuthenticationResponseOpts = {
+      response: body,
+      expectedChallenge: `${expectedChallenge}`,
+      expectedOrigin,
+      expectedRPID: rpID,
+      credential: dbCredential,
+      requireUserVerification: false,
+    };
+    verification = await verifyAuthenticationResponse(opts);
+  } catch (error) {
+    const _error = error as Error;
+    console.error(_error);
+    return res.status(400).send({ error: _error.message });
+  }
+
+  const { verified, authenticationInfo } = verification;
+
+  if (verified) {
+    // Update counter
+    dbCredential.counter = authenticationInfo.newCounter;
+
+    // Log the user in
+    req.session.userId = user.id;
+
+    const currentUA = parseUserAgent(req.headers['user-agent'] as string);
+
+    console.log('✅ Passwordless authentication successful:', {
+      userId: user.id,
+      username: user.username,
+      credentialId: dbCredential.id,
+      credentialSource: dbCredential.credentialSource,
+      currentBrowser: `${currentUA.browser} ${currentUA.browserVersion}`,
+      currentOS: `${currentUA.os} ${currentUA.osVersion}`,
+    });
+
+    req.session.currentChallenge = undefined;
+
+    // Return user info
+    const allCredentials = user.credentials.map((cred) => ({
+      id: cred.id,
+      credentialSource: cred.credentialSource || 'Unknown',
+      deviceType: cred.deviceType,
+      backedUp: cred.backedUp,
+      browser: `${cred.browser || 'Unknown'} ${cred.browserVersion || ''}`.trim(),
+      os: `${cred.os || 'Unknown'} ${cred.osVersion || ''}`.trim(),
+      device: cred.device,
+      registeredAt: cred.registeredAt,
+      isCurrentCredential: cred.id === dbCredential!.id,
+    }));
+
+    return res.send({
+      verified,
+      authenticatedWith: {
+        id: dbCredential.id,
+        credentialSource: dbCredential.credentialSource,
+        deviceType: dbCredential.deviceType,
+        browser: `${dbCredential.browser || 'Unknown'} ${dbCredential.browserVersion || ''}`.trim(),
+        os: `${dbCredential.os || 'Unknown'} ${dbCredential.osVersion || ''}`.trim(),
+      },
+      currentSession: {
+        browser: `${currentUA.browser} ${currentUA.browserVersion}`,
+        os: `${currentUA.os} ${currentUA.osVersion}`,
+        device: currentUA.device,
+      },
+      user: {
+        id: user.id,
+        username: user.username,
+        totalCredentials: user.credentials.length,
+        allCredentials,
+      },
+    });
+  }
+
+  req.session.currentChallenge = undefined;
+  res.send({ verified });
+});
+
+/**
  * List all credentials for the logged-in user
  */
 app.get('/list-credentials', (req, res) => {

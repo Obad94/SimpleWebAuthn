@@ -35,6 +35,12 @@ button {
   margin: 0.25rem;
 }
 
+button.secondary {
+  background: transparent;
+  border: 1px solid #ccc;
+  font-size: 0.85rem;
+}
+
 button:active {
   background: var(--button-active);
 }
