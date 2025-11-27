@@ -168,6 +168,35 @@
           elemError.innerHTML = '';
           elemDebug.innerHTML = '';
 
+          // Get username and password from form
+          const username = document.querySelector('input[name="username"]').value;
+          const password = document.querySelector('input[name="password"]').value;
+
+          // If username/password provided, register user first
+          if (username && password) {
+            try {
+              const registerResp = await fetch('/register-user', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username, password }),
+              });
+
+              const registerJSON = await registerResp.json();
+
+              if (!registerResp.ok) {
+                elemError.innerText = registerJSON.error || 'Failed to register user';
+                return;
+              }
+
+              printDebug(elemDebug, 'User Registration', JSON.stringify(registerJSON, null, 2));
+            } catch (error) {
+              elemError.innerText = error;
+              return;
+            }
+          }
+
           const resp = await fetch('/generate-registration-options');
 
           let attResp;
@@ -222,6 +251,35 @@
           elemSuccess.innerHTML = '';
           elemError.innerHTML = '';
           elemDebug.innerHTML = '';
+
+          // Get username and password from form
+          const username = document.querySelector('input[name="username"]').value;
+          const password = document.querySelector('input[name="password"]').value;
+
+          // If username/password provided, login first
+          if (username && password) {
+            try {
+              const loginResp = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username, password }),
+              });
+
+              const loginJSON = await loginResp.json();
+
+              if (!loginResp.ok) {
+                elemError.innerText = loginJSON.error || 'Failed to login';
+                return;
+              }
+
+              printDebug(elemDebug, 'User Login', JSON.stringify(loginJSON, null, 2));
+            } catch (error) {
+              elemError.innerText = error;
+              return;
+            }
+          }
 
           const resp = await fetch('/generate-authentication-options');
 

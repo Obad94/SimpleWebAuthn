@@ -53,5 +53,9 @@ declare module 'express-session' {
      * `generate` methods, defaults to 60000ms)
      */
     currentChallenge?: string;
+    /**
+     * Store the currently logged-in user's ID
+     */
+    userId?: string;
   }
 }

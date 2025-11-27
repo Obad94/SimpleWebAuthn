@@ -104,10 +104,83 @@ const inMemoryUserDB: { [loggedInUserId: string]: LoggedInUser } = {
 };
 
 /**
+ * User Registration and Login with Username/Password
+ */
+app.post('/register-user', (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).send({ error: 'Username and password required' });
+  }
+
+  // Check if user already exists
+  const existingUser = Object.values(inMemoryUserDB).find(
+    (user) => user.username === username
+  );
+
+  if (existingUser) {
+    return res.status(400).send({ error: 'Username already exists' });
+  }
+
+  // Create new user (in production, hash the password!)
+  const userId = `user_${Date.now()}`;
+  inMemoryUserDB[userId] = {
+    id: userId,
+    username,
+    credentials: [],
+  };
+
+  // Log them in
+  req.session.userId = userId;
+
+  console.log('👤 New user registered:', {
+    userId,
+    username,
+  });
+
+  res.send({ success: true, userId, username });
+});
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).send({ error: 'Username and password required' });
+  }
+
+  // Find user by username
+  const user = Object.values(inMemoryUserDB).find(
+    (user) => user.username === username
+  );
+
+  if (!user) {
+    return res.status(401).send({ error: 'Invalid username or password' });
+  }
+
+  // In production, verify hashed password here!
+  // For this demo, we'll accept any password if user exists
+
+  // Log them in
+  req.session.userId = user.id;
+
+  console.log('👤 User logged in:', {
+    userId: user.id,
+    username: user.username,
+  });
+
+  res.send({ success: true, userId: user.id, username: user.username });
+});
+
+/**
  * Registration (a.k.a. "Registration")
  */
 app.get('/generate-registration-options', async (req, res) => {
-  const user = inMemoryUserDB[loggedInUserId];
+  const userId = req.session.userId || loggedInUserId;
+  const user = inMemoryUserDB[userId];
+
+  if (!user) {
+    return res.status(401).send({ error: 'User not logged in' });
+  }
 
   const {
     /**
@@ -163,7 +236,12 @@ app.get('/generate-registration-options', async (req, res) => {
 app.post('/verify-registration', async (req, res) => {
   const body: RegistrationResponseJSON = req.body;
 
-  const user = inMemoryUserDB[loggedInUserId];
+  const userId = req.session.userId || loggedInUserId;
+  const user = inMemoryUserDB[userId];
+
+  if (!user) {
+    return res.status(401).send({ error: 'User not logged in' });
+  }
 
   const expectedChallenge = req.session.currentChallenge;
 
@@ -227,7 +305,19 @@ app.post('/verify-registration', async (req, res) => {
  */
 app.get('/generate-authentication-options', async (req, res) => {
   // You need to know the user by this point
-  const user = inMemoryUserDB[loggedInUserId];
+  const userId = req.session.userId || loggedInUserId;
+  const user = inMemoryUserDB[userId];
+
+  if (!user) {
+    return res.status(401).send({ error: 'User not logged in' });
+  }
+
+  console.log('🔑 Authentication requested:', {
+    userId: user.id,
+    username: user.username,
+    registeredCredentials: user.credentials.length,
+    userAgent: req.headers['user-agent'],
+  });
 
   const opts: GenerateAuthenticationOptionsOpts = {
     timeout: 60000,
@@ -259,7 +349,12 @@ app.get('/generate-authentication-options', async (req, res) => {
 app.post('/verify-authentication', async (req, res) => {
   const body: AuthenticationResponseJSON = req.body;
 
-  const user = inMemoryUserDB[loggedInUserId];
+  const userId = req.session.userId || loggedInUserId;
+  const user = inMemoryUserDB[userId];
+
+  if (!user) {
+    return res.status(401).send({ error: 'User not logged in' });
+  }
 
   const expectedChallenge = req.session.currentChallenge;
 
@@ -300,6 +395,25 @@ app.post('/verify-authentication', async (req, res) => {
   if (verified) {
     // Update the credential's counter in the DB to the newest count in the authentication
     dbCredential.counter = authenticationInfo.newCounter;
+
+    console.log('✅ Authentication successful:', {
+      userId: user.id,
+      username: user.username,
+      credentialId: dbCredential.id,
+      credentialDeviceType: dbCredential.deviceType,
+      credentialBackedUp: dbCredential.backedUp,
+      credentialRegisteredAt: dbCredential.registeredAt,
+      credentialUserAgent: dbCredential.userAgent,
+      currentUserAgent: req.headers['user-agent'],
+      counterUpdated: `${authenticationInfo.newCounter}`,
+    });
+  } else {
+    console.log('❌ Authentication failed:', {
+      userId: user.id,
+      username: user.username,
+      credentialId: body.id,
+      userAgent: req.headers['user-agent'],
+    });
   }
 
   req.session.currentChallenge = undefined;
