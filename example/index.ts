@@ -345,7 +345,9 @@ app.get('/generate-authentication-options', async (req, res) => {
     allowCredentials: user.credentials.map((cred) => ({
       id: cred.id,
       type: 'public-key',
-      transports: cred.transports,
+      // Don't restrict transports - let browser choose the best option
+      // This allows Windows Hello, Bitwarden, or any available authenticator
+      // transports: cred.transports,
     })),
     /**
      * Wondering why user verification isn't required? See here:
