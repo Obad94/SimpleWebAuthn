@@ -218,14 +218,14 @@ Response:
 ```json
 {
   "user": {
-    "id": "user_1764256427827",
-    "username": "zafarobad@gmail.com"
+    "id": "user_1234567890",
+    "username": "user@example.com"
   },
   "totalCredentials": 4,
   "credentials": [
     {
       "index": 1,
-      "id": "LxvExtIFetjNg-LeXCeKFA",
+      "id": "abc123...",
       "credentialSource": "Synced Passkey (Phone/Cloud)",
       "deviceType": "multiDevice",
       "backedUp": true,
@@ -238,7 +238,7 @@ Response:
     },
     {
       "index": 2,
-      "id": "2-ZJ70hxi4TUngGB6NkVYihWWlJoMoOuWF2b3lnx37o",
+      "id": "def456...",
       "credentialSource": "Google Password Manager",
       "deviceType": "multiDevice",
       "backedUp": true,
@@ -251,7 +251,7 @@ Response:
     },
     {
       "index": 3,
-      "id": "KAjV7dvDrwQ-Dn3M47zo9Qnv55AX5Ekq0A2coz5u24s",
+      "id": "ghi789...",
       "credentialSource": "Windows Hello",
       "deviceType": "singleDevice",
       "backedUp": false,
@@ -264,7 +264,7 @@ Response:
     },
     {
       "index": 4,
-      "id": "J66yzJnS5ZYY7s9X3GqIvhVpvqg",
+      "id": "jkl012...",
       "credentialSource": "iCloud Keychain",
       "deviceType": "multiDevice",
       "backedUp": true,
